@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="FinanceQuest" />
+  <meta name="theme-color" content="#1a0533" />
+  <title>FinanceQuest</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #1a0533; font-family: -apple-system, 'Segoe UI', sans-serif; }
+    select, input, option { background: #2d1b69; color: #fff; }
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-thumb { background: rgba(167,139,250,0.3); border-radius: 4px; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+const CATEGORIES_INCOME = ["Salario","Freelance","Regalo","Inversión","Otro"];
+const CATEGORIES_EXPENSE = ["Comida","Transporte","Entretenimiento","Ropa","Salud","Servicios","Renta","Otro"];
+const WALLETS = ["Efectivo","Tarjeta de Débito","Tarjeta de Crédito","Ahorros"];
+const AVATARS = ["🧙","🦸","🧑‍💼","🧑‍🚀","🧑‍🎤","🦊","🐉","🤖"];
+
+const ACHIEVEMENTS = [
+  { id:"first_income", label:"🎉 Primer Ingreso", condition: s => s.transactions.some(t=>t.type==="income"), xp:50 },
+  { id:"first_save", label:"🏦 Primer Ahorro", condition: s => s.balance>0 && s.transactions.length>1, xp:100 },
+  { id:"no_expense", label:"🧘 Sin Gastos", condition: s => s.transactions.filter(t=>t.type==="expense").length===0, xp:75 },
+  { id:"five_tx", label:"📊 Racha Financiera", condition: s => s.transactions.length>=5, xp:120 },
+  { id:"balance_500", label:"💎 Saldo Saludable", condition: s => s.balance>=500, xp:200 },
+];
+
+const LEVELS = [
+  {level:1, name:"Novato Financiero", minXp:0, maxXp:200},
+  {level:2, name:"Aprendiz del Dinero", minXp:200, maxXp:500},
+  {level:3, name:"Gestor Intermedio", minXp:500, maxXp:1000},
+  {level:4, name:"Maestro del Presupuesto", minXp:1000, maxXp:2000},
+  {level:5, name:"Leyenda Financiera", minXp:2000, maxXp:9999},
+];
+
+const getLevel = xp => LEVELS.slice().reverse().find(l=>xp>=l.minXp) || LEVELS[0];
+
+const EMPTY = {
+  playerName:"", avatar:"🧙", xp:0, unlockedAchievements:[],
+  transactions:[], wallets:{Efectivo:0,"Tarjeta de Débito":0,"Tarjeta de Crédito":0,Ahorros:0}, balance:0
+};
+
+const load = () => { try { const d=localStorage.getItem("fq"); return d?JSON.parse(d):null; } catch{ return null; } };
+const save = s => { try { localStorage.setItem("fq", JSON.stringify(s)); } catch{} };
+
+const inp = { width:"100%", padding:"12px 14px", borderRadius:12, border:"1px solid rgba(255,255,255,0.15)", background:"rgba(255,255,255,0.07)", color:"#fff", fontSize:15, boxSizing:"border-box", outline:"none" };
+
+function App() {
+  const [state, setState] = useState(() => load() || EMPTY);
+  const [screen, setScreen] = useState(()=> (load()&&load().playerName) ? "home" : "setup");
+  const [form, setForm] = useState({type:"income", amount:"", category:CATEGORIES_INCOME[0], wallet:WALLETS[0], note:""});
+  const [notif, setNotif] = useState(null);
+  const [setupName, setSetupName] = useState("");
+  const [setupAvatar, setSetupAvatar] = useState("🧙");
+
+  useEffect(() => { save(state); }, [state]);
+
+  const notify = (msg, color="#6c3fc5") => {
+    setNotif({msg,color});
+    setTimeout(()=>setNotif(null), 2800);
+  };
+
+  const checkAchievements = ns => {
+    const newIds = ACHIEVEMENTS.filter(a=>!ns.unlockedAchievements.includes(a.id)&&a.condition(ns)).map(a=>a.id);
+    if (!newIds.length) return ns;
+    const xp = newIds.reduce((s,id)=>s+(ACHIEVEMENTS.find(a=>a.id===id)?.xp||0),0);
+    return {...ns, xp:ns.xp+xp, unlockedAchievements:[...ns.unlockedAchievements,...newIds]};
+  };
+
+  const addTransaction = () => {
+    const amount = parseFloat(form.amount);
+    if (!amount||amount<=0) { notify("⚠️ Monto inválido","#e74c3c"); return; }
+    const t = {...form, amount, date:new Date().toLocaleDateString("es-MX"), id:Date.now()};
+    const delta = form.type==="income"?amount:-amount;
+    const xpGain = form.type==="income"?20:10;
+    let ns = {...state, transactions:[t,...state.transactions], wallets:{...state.wallets,[form.wallet]:(state.wallets[form.wallet]||0)+delta}, balance:state.balance+delta, xp:state.xp+xpGain};
+    ns = checkAchievements(ns);
+    setState(ns);
+    setForm({type:"income",amount:"",category:CATEGORIES_INCOME[0],wallet:WALLETS[0],note:""});
+    notify(form.type==="income"?`+$${amount.toFixed(2)} ingresado 🎉`:` -$${amount.toFixed(2)} registrado 📝`, form.type==="income"?"#27ae60":"#e67e22");
+    setScreen("home");
+  };
+
+  const lv = getLevel(state.xp);
+  const xpPct = ((state.xp-lv.minXp)/(lv.maxXp-lv.minXp))*100;
+  const totalIn = state.transactions.filter(t=>t.type==="income").reduce((s,t)=>s+t.amount,0);
+  const totalEx = state.transactions.filter(t=>t.type==="expense").reduce((s,t)=>s+t.amount,0);
+
+  if (screen==="setup") return (
+    <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#1a0533,#2d1b69)",display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div style={{background:"rgba(255,255,255,0.07)",borderRadius:24,padding:32,maxWidth:360,width:"90%",color:"#fff",textAlign:"center",border:"1px solid rgba(255,255,255,0.15)"}}>
+        <div style={{fontSize:48}}>⚔️</div>
+        <h1 style={{fontSize:26,fontWeight:800,margin:"8px 0 4px"}}>FinanceQuest</h1>
+        <p style={{opacity:.7,marginBottom:24,fontSize:13}}>Convierte tus finanzas en una aventura épica</p>
+        <p style={{fontSize:13,opacity:.8,marginBottom:10}}>Elige tu aventurero:</p>
+        <div style={{display:"flex",flexWrap:"wrap",gap:8,justifyContent:"center",marginBottom:20}}>
+          {AVATARS.map(a=>(
+            <button key={a} onClick={()=>setSetupAvatar(a)} style={{fontSize:28,background:setupAvatar===a?"rgba(255,255,255,0.25)":"rgba(255,255,255,0.07)",border:setupAvatar===a?"2px solid #a78bfa":"2px solid transparent",borderRadius:12,padding:"6px 10px",cursor:"pointer"}}>{a}</button>
+          ))}
+        </div>
+        <input placeholder="Tu nombre de héroe..." value={setupName} onChange={e=>setSetupName(e.target.value)}
+          style={{...inp, marginBottom:16}} />
+        <button onClick={()=>{ if(!setupName.trim()) return; const ns={...state,playerName:setupName,avatar:setupAvatar}; setState(ns); setScreen("home"); }}
+          style={{width:"100%",padding:14,borderRadius:14,border:"none",background:"linear-gradient(135deg,#7c3aed,#a855f7)",color:"#fff",fontSize:16,fontWeight:700,cursor:"pointer"}}>
+          ¡Comenzar Aventura! 🚀
+        </button>
+      </div>
+    </div>
+  );
+
+  const nav = (label,s) => (
+    <button onClick={()=>setScreen(s)} style={{flex:1,padding:"10px 2px",background:screen===s?"rgba(167,139,250,0.25)":"transparent",border:"none",color:screen===s?"#a78bfa":"rgba(255,255,255,0.5)",fontSize:10,fontWeight:700,cursor:"pointer",borderRadius:10}}>
+      {label}
+    </button>
+  );
+
+  return (
+    <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#1a0533,#2d1b69)",color:"#fff",display:"flex",flexDirection:"column",maxWidth:480,margin:"0 auto",position:"relative"}}>
+      {notif && <div style={{position:"fixed",top:20,left:"50%",transform:"translateX(-50%)",background:notif.color,color:"#fff",padding:"12px 24px",borderRadius:50,fontWeight:700,fontSize:14,zIndex:999,boxShadow:"0 4px 20px rgba(0,0,0,0.4)",whiteSpace:"nowrap"}}>{notif.msg}</div>}
+
+      <div style={{padding:"16px 20px 10px",background:"rgba(0,0,0,0.2)",borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <div style={{fontSize:36}}>{state.avatar}</div>
+          <div style={{flex:1}}>
+            <div style={{fontWeight:800,fontSize:15}}>{state.playerName} <span style={{background:"linear-gradient(135deg,#7c3aed,#a855f7)",padding:"2px 8px",borderRadius:20,fontSize:11}}>Nv.{lv.level}</span></div>
+            <div style={{fontSize:11,opacity:.7,marginBottom:4}}>{lv.name}</div>
+            <div style={{background:"rgba(255,255,255,0.1)",borderRadius:20,height:6,overflow:"hidden"}}>
+              <div style={{background:"linear-gradient(90deg,#7c3aed,#a78bfa)",height:"100%",width:`${Math.min(xpPct,100)}%`,borderRadius:20,transition:"width .5s"}} />
+            </div>
+            <div style={{fontSize:10,opacity:.5,marginTop:2}}>{state.xp} / {lv.maxXp} XP</div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{flex:1,overflowY:"auto",padding:"16px 16px 90px"}}>
+        {screen==="home" && (
+          <div>
+            <div style={{background:"linear-gradient(135deg,#7c3aed,#4f46e5)",borderRadius:20,padding:"24px 20px",textAlign:"center",marginBottom:16,boxShadow:"0 8px 32px rgba(124,58,237,0.4)"}}>
+              <div style={{fontSize:12,opacity:.8,marginBottom:4}}>💰 Balance Total</div>
+              <div style={{fontSize:42,fontWeight:900}}>${state.balance.toFixed(2)}</div>
+              <div style={{fontSize:11,opacity:.7,marginTop:4}}>{state.unlockedAchievements.length} logros desbloqueados</div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
+              <div style={{background:"rgba(39,174,96,0.15)",border:"1px solid rgba(39,174,96,0.3)",borderRadius:16,padding:16,textAlign:"center"}}>
+                <div style={{fontSize:20}}>📈</div>
+                <div style={{fontSize:11,opacity:.7}}>Ingresos</div>
+                <div style={{fontWeight:800,fontSize:18,color:"#4ade80"}}>${totalIn.toFixed(2)}</div>
+              </div>
+              <div style={{background:"rgba(231,76,60,0.15)",border:"1px solid rgba(231,76,60,0.3)",borderRadius:16,padding:16,textAlign:"center"}}>
+                <div style={{fontSize:20}}>📉</div>
+                <div style={{fontSize:11,opacity:.7}}>Egresos</div>
+                <div style={{fontWeight:800,fontSize:18,color:"#f87171"}}>${totalEx.toFixed(2)}</div>
+              </div>
+            </div>
+            <div style={{marginBottom:8,fontWeight:700,fontSize:13,opacity:.7}}>ÚLTIMOS MOVIMIENTOS</div>
+            {state.transactions.length===0 && <div style={{textAlign:"center",opacity:.4,padding:24,fontSize:13}}>¡Agrega tu primer movimiento! 🎯</div>}
+            {state.transactions.slice(0,5).map(t=>(
+              <div key={t.id} style={{display:"flex",alignItems:"center",gap:12,background:"rgba(255,255,255,0.05)",borderRadius:14,padding:"12px 14px",marginBottom:8}}>
+                <div style={{fontSize:22}}>{t.type==="income"?"💚":"🔴"}</div>
+                <div style={{flex:1}}>
+                  <div style={{fontWeight:700,fontSize:13}}>{t.category}</div>
+                  <div style={{fontSize:11,opacity:.5}}>{t.wallet} · {t.date}</div>
+                  {t.note&&<div style={{fontSize:11,opacity:.4}}>{t.note}</div>}
+                </div>
+                <div style={{fontWeight:800,color:t.type==="income"?"#4ade80":"#f87171"}}>{t.type==="income"?"+":"-"}${t.amount.toFixed(2)}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {screen==="add" && (
+          <div>
+            <h2 style={{marginTop:0,marginBottom:16,fontSize:18}}>➕ Nuevo Movimiento</h2>
+            <div style={{display:"flex",gap:8,marginBottom:16}}>
+              {["income","expense"].map(tp=>(
+                <button key={tp} onClick={()=>setForm({...form,type:tp,category:tp==="income"?CATEGORIES_INCOME[0]:CATEGORIES_EXPENSE[0]})}
+                  style={{flex:1,padding:12,borderRadius:14,border:"none",background:form.type===tp?(tp==="income"?"rgba(39,174,96,0.4)":"rgba(231,76,60,0.4)"):"rgba(255,255,255,0.07)",color:"#fff",fontWeight:700,cursor:"pointer",fontSize:14}}>
+                  {tp==="income"?"💚 Ingreso":"🔴 Egreso"}
+                </button>
+              ))}
+            </div>
+            {[
+              {label:"Monto ($)", el:<input type="number" inputMode="decimal" placeholder="0.00" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})} style={inp} />},
+              {label:"Categoría", el:<select value={form.category} onChange={e=>setForm({...form,category:e.target.value})} style={inp}>{(form.type==="income"?CATEGORIES_INCOME:CATEGORIES_EXPENSE).map(c=><option key={c}>{c}</option>)}</select>},
+              {label:"Billetera / Tarjeta", el:<select value={form.wallet} onChange={e=>setForm({...form,wallet:e.target.value})} style={inp}>{WALLETS.map(w=><option key={w}>{w}</option>)}</select>},
+              {label:"Nota (opcional)", el:<input placeholder="Ej: Cena con amigos..." value={form.note} onChange={e=>setForm({...form,note:e.target.value})} style={inp} />},
+            ].map(({label,el})=>(
+              <div key={label} style={{marginBottom:14}}>
+                <div style={{fontSize:12,opacity:.6,marginBottom:6}}>{label}</div>
+                {el}
+              </div>
+            ))}
+            <button onClick={addTransaction} style={{width:"100%",padding:16,borderRadius:16,border:"none",background:"linear-gradient(135deg,#7c3aed,#a855f7)",color:"#fff",fontWeight:800,fontSize:16,cursor:"pointer",marginTop:8}}>
+              Registrar ⚔️
+            </button>
+          </div>
+        )}
+
+        {screen==="wallets" && (
+          <div>
+            <h2 style={{marginTop:0,marginBottom:16,fontSize:18}}>👛 Mis Billeteras</h2>
+            {WALLETS.map(w=>(
+              <div key={w} style={{background:"rgba(255,255,255,0.06)",borderRadius:16,padding:"16px 18px",marginBottom:10,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div>
+                  <div style={{fontWeight:700}}>{w}</div>
+                  <div style={{fontSize:11,opacity:.5}}>Disponible</div>
+                </div>
+                <div style={{fontWeight:900,fontSize:20,color:(state.wallets[w]||0)>=0?"#4ade80":"#f87171"}}>${(state.wallets[w]||0).toFixed(2)}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {screen==="history" && (
+          <div>
+            <h2 style={{marginTop:0,marginBottom:16,fontSize:18}}>📜 Historial Completo</h2>
+            {state.transactions.length===0 && <div style={{textAlign:"center",opacity:.4,padding:24,fontSize:13}}>No hay movimientos aún.</div>}
+            {state.transactions.map(t=>(
+              <div key={t.id} style={{display:"flex",alignItems:"center",gap:12,background:"rgba(255,255,255,0.05)",borderRadius:14,padding:"12px 14px",marginBottom:8}}>
+                <div style={{fontSize:22}}>{t.type==="income"?"💚":"🔴"}</div>
+                <div style={{flex:1}}>
+                  <div style={{fontWeight:700,fontSize:13}}>{t.category}</div>
+                  <div style={{fontSize:11,opacity:.5}}>{t.wallet} · {t.date}</div>
+                  {t.note&&<div style={{fontSize:11,opacity:.4}}>{t.note}</div>}
+                </div>
+                <div style={{fontWeight:800,color:t.type==="income"?"#4ade80":"#f87171"}}>{t.type==="income"?"+":"-"}${t.amount.toFixed(2)}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {screen==="achievements" && (
+          <div>
+            <h2 style={{marginTop:0,marginBottom:4,fontSize:18}}>🏆 Logros</h2>
+            <p style={{fontSize:12,opacity:.5,marginTop:0,marginBottom:16}}>Completa misiones para ganar XP</p>
+            {ACHIEVEMENTS.map(a=>{
+              const ok=state.unlockedAchievements.includes(a.id);
+              return (
+                <div key={a.id} style={{display:"flex",gap:14,alignItems:"center",background:ok?"rgba(167,139,250,0.15)":"rgba(255,255,255,0.04)",border:`1px solid ${ok?"rgba(167,139,250,0.4)":"rgba(255,255,255,0.08)"}`,borderRadius:16,padding:"14px 16px",marginBottom:10}}>
+                  <div style={{fontSize:28,opacity:ok?1:0.3}}>{a.label.split(" ")[0]}</div>
+                  <div style={{flex:1}}>
+                    <div style={{fontWeight:700,fontSize:13,opacity:ok?1:0.5}}>{a.label.slice(a.label.indexOf(" ")+1)}</div>
+                    <div style={{fontSize:11,color:"#a78bfa"}}>+{a.xp} XP</div>
+                  </div>
+                  <div>{ok?"✅":"🔒"}</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:480,background:"rgba(15,5,40,0.97)",borderTop:"1px solid rgba(255,255,255,0.08)",padding:"8px 8px 20px",display:"flex",gap:4}}>
+        {nav("🏠 Inicio","home")}
+        {nav("➕ Anotar","add")}
+        {nav("👛 Cuentas","wallets")}
+        {nav("📜 Historial","history")}
+        {nav("🏆 Logros","achievements")}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
